@@ -2,7 +2,7 @@ use mpris::{PlayerFinder, PlaybackStatus};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use serde::Serialize;
 
 #[derive(Debug)]
@@ -19,6 +19,7 @@ struct TrackMeta {
     album: String,
     duration: u32,
     position: f64,
+    playing: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -35,9 +36,11 @@ enum BackendMessage {
         artist: String,
         lyrics: Vec<LyricLine>,
     },
-    Index {
+    Sync {
         index: i32,
-        progress: f64,
+        position: f64,
+        duration: f64,
+        playing: bool,
     },
     Clear,
 }
@@ -62,9 +65,8 @@ fn parse_source_arg() -> Source {
 fn get_meta(finder: &PlayerFinder) -> Option<TrackMeta> {
     let player = finder.find_active().ok()?;
     let playback_status = player.get_playback_status().ok()?;
-    if playback_status != PlaybackStatus::Playing {
-        return None;
-    }
+    let playing = playback_status == PlaybackStatus::Playing;
+    
     let metadata = player.get_metadata().ok()?;
     let title = metadata.title()?.to_string();
     let artist = metadata.artists()
@@ -80,6 +82,7 @@ fn get_meta(finder: &PlayerFinder) -> Option<TrackMeta> {
         album,
         duration,
         position,
+        playing,
     })
 }
 
@@ -281,6 +284,11 @@ fn main() {
 
     let mut last_key = None;
     let mut synced: Vec<LyricLine> = Vec::new();
+    
+    let mut last_index = None;
+    let mut last_playing = None;
+    let mut expected_position = 0.0;
+    let mut last_tick = Instant::now();
 
     loop {
         let meta = get_meta(&finder);
@@ -289,6 +297,8 @@ fn main() {
                 emit_msg(&BackendMessage::Clear);
                 last_key = None;
                 synced.clear();
+                last_index = None;
+                last_playing = None;
             }
             thread::sleep(Duration::from_millis(1500)); // IDLE
             continue;
@@ -312,10 +322,33 @@ fn main() {
                 emit_msg(&BackendMessage::Clear);
             }
             last_key = Some(key);
+            last_index = None;
+            last_playing = None;
+            expected_position = m.position;
+            last_tick = Instant::now();
         }
 
-        if !synced.is_empty() {
-            let i = current_index_lyrics(&synced, m.position);
+        if synced.is_empty() {
+            thread::sleep(Duration::from_millis(2000)); // SLOW
+            continue;
+        }
+
+        let now = Instant::now();
+        let elapsed = now.duration_since(last_tick).as_secs_f64();
+        last_tick = now;
+
+        if m.playing {
+            expected_position += elapsed;
+        }
+
+        let i = current_index_lyrics(&synced, m.position);
+        
+        let position_drift = (m.position - expected_position).abs();
+        let seek_detected = position_drift > 0.8;
+        let status_changed = Some(m.playing) != last_playing;
+        let index_changed = Some(i) != last_index;
+
+        if index_changed || status_changed || seek_detected {
             if i >= 0 {
                 let current_time = synced[i as usize].time;
                 let next_time = if (i as usize) + 1 < synced.len() {
@@ -327,25 +360,26 @@ fn main() {
                 };
                 
                 let duration = next_time - current_time;
-                let progress = if duration > 0.0 {
-                    ((m.position - current_time) / duration).clamp(0.0, 1.0)
-                } else {
-                    0.0
-                };
-                
-                emit_msg(&BackendMessage::Index {
+                emit_msg(&BackendMessage::Sync {
                     index: i,
-                    progress,
+                    position: m.position,
+                    duration,
+                    playing: m.playing,
                 });
             } else {
-                emit_msg(&BackendMessage::Index {
+                emit_msg(&BackendMessage::Sync {
                     index: -1,
-                    progress: 0.0,
+                    position: m.position,
+                    duration: 5.0,
+                    playing: m.playing,
                 });
             }
-            thread::sleep(Duration::from_millis(400)); // FAST
-        } else {
-            thread::sleep(Duration::from_millis(2000)); // SLOW
+            
+            last_index = Some(i);
+            last_playing = Some(m.playing);
+            expected_position = m.position;
         }
+
+        thread::sleep(Duration::from_millis(250)); // FAST
     }
 }

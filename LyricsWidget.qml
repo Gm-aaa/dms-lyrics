@@ -35,6 +35,14 @@ PluginComponent {
         id: lyricsModel
     }
 
+    // Animation to drive currentProgress smoothly locally to eliminate D-Bus position stuttering
+    NumberAnimation {
+        id: progressAnim
+        target: root
+        property: "currentProgress"
+        easing.type: Easing.Linear
+    }
+
     // Backend process
     Process {
         id: proc
@@ -58,13 +66,36 @@ PluginComponent {
                         root.currentSongArtist = msg.artist;
                         root.currentIndex = -1;
                         root.currentProgress = 0.0;
-                    } else if (msg.type === "index") {
-                        root.currentIndex = msg.index;
-                        root.currentProgress = msg.progress ?? 0.0;
+                        progressAnim.running = false;
+                    } else if (msg.type === "sync") {
+                        var changed = (root.currentIndex !== msg.index);
+                        if (changed) {
+                            root.currentIndex = msg.index;
+                            if (msg.index >= 0 && msg.index < lyricsModel.count) {
+                                root.currentLine = lyricsModel.get(msg.index).text;
+                            } else {
+                                root.currentLine = "";
+                            }
+                        }
+
+                        // Calculate progress at the queried position
+                        var progress = 0.0;
                         if (msg.index >= 0 && msg.index < lyricsModel.count) {
-                            root.currentLine = lyricsModel.get(msg.index).text;
-                        } else {
-                            root.currentLine = "";
+                            var lineStartTime = lyricsModel.get(msg.index).time;
+                            if (msg.duration > 0) {
+                                progress = Math.max(0.0, Math.min(1.0, (msg.position - lineStartTime) / msg.duration));
+                            }
+                        }
+
+                        // Sync progress animation
+                        progressAnim.running = false;
+                        root.currentProgress = progress;
+                        
+                        if (msg.playing && msg.index >= 0 && progress < 1.0) {
+                            progressAnim.from = progress;
+                            progressAnim.to = 1.0;
+                            progressAnim.duration = (msg.duration * (1.0 - progress)) * 1000;
+                            progressAnim.running = true;
                         }
                     } else if (msg.type === "clear") {
                         lyricsModel.clear();
@@ -73,6 +104,7 @@ PluginComponent {
                         root.currentProgress = 0.0;
                         root.currentSongTitle = "";
                         root.currentSongArtist = "";
+                        progressAnim.running = false;
                     }
                 } catch (e) {
                     console.log("[Lyrics Backend Error] " + e + " for line: " + line);
@@ -130,7 +162,7 @@ PluginComponent {
 
                 StyledText {
                     id: lyricText
-                    text: root.currentLine
+                    text: ""
                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig ? root.barConfig.fontScale : undefined)
                     color: Theme.widgetTextColor
                     anchors.verticalCenter: parent.verticalCenter
@@ -139,11 +171,28 @@ PluginComponent {
                     readonly property real maxScroll: implicitWidth - marqueeContainer.width
                     x: maxScroll > 0 ? -root.currentProgress * maxScroll : 0
 
-                    Behavior on x {
-                        NumberAnimation {
-                            duration: 380
-                            easing.type: Easing.Linear
+                    // Fade transition on change of text
+                    opacity: 1.0
+                    Behavior on opacity {
+                        NumberAnimation { duration: 150; easing.type: Easing.InOutQuad }
+                    }
+
+                    Component.onCompleted: {
+                        lyricText.text = root.currentLine;
+                    }
+
+                    Connections {
+                        target: root
+                        function onCurrentLineChanged() {
+                            fadeTransition.restart();
                         }
+                    }
+
+                    SequentialAnimation {
+                        id: fadeTransition
+                        NumberAnimation { target: lyricText; property: "opacity"; to: 0.0; duration: 150; easing.type: Easing.InOutQuad }
+                        ScriptAction { script: lyricText.text = root.currentLine }
+                        NumberAnimation { target: lyricText; property: "opacity"; to: 1.0; duration: 150; easing.type: Easing.InOutQuad }
                     }
                 }
             }
@@ -175,72 +224,75 @@ PluginComponent {
                     anchors.margins: Theme.spacingM
                     spacing: Theme.spacingS
 
-                StyledText {
-                    text: root.currentSongArtist
-                    font.pixelSize: Theme.fontSizeSmall
-                    font.italic: true
-                    color: Theme.surfaceVariantText
-                    Layout.fillWidth: true
-                    visible: root.currentSongArtist !== ""
-                    horizontalAlignment: Text.AlignHCenter
-                }
+                    StyledText {
+                        text: root.currentSongArtist
+                        font.pixelSize: Theme.fontSizeSmall
+                        font.italic: true
+                        color: Theme.surfaceVariantText
+                        Layout.fillWidth: true
+                        visible: root.currentSongArtist !== ""
+                        horizontalAlignment: Text.AlignHCenter
+                    }
 
-                Rectangle {
-                    color: Theme.surfaceVariant
-                    height: 1
-                    Layout.fillWidth: true
-                    visible: root.currentSongArtist !== ""
-                }
+                    Rectangle {
+                        color: Theme.surfaceVariant
+                        height: 1
+                        Layout.fillWidth: true
+                        visible: root.currentSongArtist !== ""
+                    }
 
-                StyledText {
-                    text: "当前无歌词播放\nNo lyrics playing"
-                    font.pixelSize: Theme.fontSizeMedium
-                    color: Theme.surfaceVariantText
-                    horizontalAlignment: Text.AlignHCenter
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    verticalAlignment: Text.AlignVCenter
-                    visible: lyricsModel.count === 0
-                }
+                    StyledText {
+                        text: "当前无歌词播放\nNo lyrics playing"
+                        font.pixelSize: Theme.fontSizeMedium
+                        color: Theme.surfaceVariantText
+                        horizontalAlignment: Text.AlignHCenter
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        verticalAlignment: Text.AlignVCenter
+                        visible: lyricsModel.count === 0
+                    }
 
-                ListView {
-                    id: lyricsListView
-                    model: lyricsModel
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    clip: true
-                    visible: lyricsModel.count > 0
+                    ListView {
+                        id: lyricsListView
+                        model: lyricsModel
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        visible: lyricsModel.count > 0
 
-                    currentIndex: root.currentIndex
-                    highlightRangeMode: ListView.StrictlyEnforceRange
-                    preferredHighlightBegin: height / 2 - 20
-                    preferredHighlightEnd: height / 2 + 20
+                        currentIndex: root.currentIndex
+                        highlightRangeMode: ListView.StrictlyEnforceRange
+                        preferredHighlightBegin: height / 2 - 20
+                        preferredHighlightEnd: height / 2 + 20
 
-                    delegate: Item {
-                        width: lyricsListView.width
-                        height: lyricText.implicitHeight + 16
+                        highlightMoveDuration: 300
+                        highlightMoveVelocity: -1
 
-                        readonly property bool isActive: index === root.currentIndex
+                        delegate: Item {
+                            width: lyricsListView.width
+                            height: lyricText.implicitHeight + 16
 
-                        StyledText {
-                            id: lyricText
-                            text: model.text
-                            width: parent.width
-                            font.pixelSize: isActive ? Theme.fontSizeMedium + 2 : Theme.fontSizeMedium
-                            font.weight: isActive ? Font.Bold : Font.Normal
-                            color: isActive ? Theme.primary : Theme.surfaceText
-                            opacity: isActive ? 1.0 : 0.4
-                            horizontalAlignment: Text.AlignHCenter
-                            wrapMode: Text.WordWrap
+                            readonly property bool isActive: index === root.currentIndex
 
-                            Behavior on color { ColorAnimation { duration: 200 } }
-                            Behavior on opacity { NumberAnimation { duration: 200 } }
-                            Behavior on font.pixelSize { NumberAnimation { duration: 200 } }
+                            StyledText {
+                                id: lyricText
+                                text: model.text
+                                width: parent.width
+                                font.pixelSize: isActive ? Theme.fontSizeMedium + 2 : Theme.fontSizeMedium
+                                font.weight: isActive ? Font.Bold : Font.Normal
+                                color: isActive ? Theme.primary : Theme.surfaceText
+                                opacity: isActive ? 1.0 : 0.4
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.WordWrap
+
+                                Behavior on color { ColorAnimation { duration: 250 } }
+                                Behavior on opacity { NumberAnimation { duration: 250 } }
+                                Behavior on font.pixelSize { NumberAnimation { duration: 250 } }
+                            }
                         }
                     }
                 }
             }
-        }
         }
     }
 }
