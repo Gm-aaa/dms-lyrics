@@ -29,7 +29,7 @@ A [DankMaterialShell](https://danklinux.com/) (DMS) DankBar plugin that shows
 ### Compile & Install
 1. Clone the repository to your DMS plugins directory:
    ```sh
-   git clone <repo-url> ~/.config/DankMaterialShell/plugins/lyrics
+   git clone https://github.com/Gm-aaa/dms-lyrics.git ~/.config/DankMaterialShell/plugins/lyrics
    ```
 2. Build the Rust backend binary:
    ```sh
@@ -73,7 +73,7 @@ Then open DMS settings (`Mod + ,`) → **Plugins**, enable **Lyrics**, and add t
 ### 编译与安装
 1. 将本仓库克隆至您的 DMS 插件目录：
    ```sh
-   git clone <repo-url> ~/.config/DankMaterialShell/plugins/lyrics
+   git clone https://github.com/Gm-aaa/dms-lyrics.git ~/.config/DankMaterialShell/plugins/lyrics
    ```
 2. 编译 Rust 后端二进制文件：
    ```sh
