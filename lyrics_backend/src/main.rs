@@ -37,6 +37,7 @@ enum BackendMessage {
     },
     Index {
         index: i32,
+        progress: f64,
     },
     Clear,
 }
@@ -280,7 +281,6 @@ fn main() {
 
     let mut last_key = None;
     let mut synced: Vec<LyricLine> = Vec::new();
-    let mut last_index = None;
 
     loop {
         let meta = get_meta(&finder);
@@ -288,7 +288,6 @@ fn main() {
             if last_key.is_some() {
                 emit_msg(&BackendMessage::Clear);
                 last_key = None;
-                last_index = None;
                 synced.clear();
             }
             thread::sleep(Duration::from_millis(1500)); // IDLE
@@ -313,14 +312,36 @@ fn main() {
                 emit_msg(&BackendMessage::Clear);
             }
             last_key = Some(key);
-            last_index = None;
         }
 
         if !synced.is_empty() {
             let i = current_index_lyrics(&synced, m.position);
-            if Some(i) != last_index {
-                emit_msg(&BackendMessage::Index { index: i });
-                last_index = Some(i);
+            if i >= 0 {
+                let current_time = synced[i as usize].time;
+                let next_time = if (i as usize) + 1 < synced.len() {
+                    synced[(i as usize) + 1].time
+                } else if m.duration > 0 {
+                    m.duration as f64
+                } else {
+                    current_time + 8.0
+                };
+                
+                let duration = next_time - current_time;
+                let progress = if duration > 0.0 {
+                    ((m.position - current_time) / duration).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                
+                emit_msg(&BackendMessage::Index {
+                    index: i,
+                    progress,
+                });
+            } else {
+                emit_msg(&BackendMessage::Index {
+                    index: -1,
+                    progress: 0.0,
+                });
             }
             thread::sleep(Duration::from_millis(400)); // FAST
         } else {

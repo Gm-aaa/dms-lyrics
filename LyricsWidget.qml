@@ -13,6 +13,7 @@ PluginComponent {
     property string scriptPath: PluginService.pluginDirectory + "/lyrics/lyrics-backend"
     property string currentLine: ""
     property int currentIndex: -1
+    property real currentProgress: 0.0
     property string currentSongTitle: ""
     property string currentSongArtist: ""
 
@@ -56,8 +57,10 @@ PluginComponent {
                         root.currentSongTitle = msg.title;
                         root.currentSongArtist = msg.artist;
                         root.currentIndex = -1;
+                        root.currentProgress = 0.0;
                     } else if (msg.type === "index") {
                         root.currentIndex = msg.index;
+                        root.currentProgress = msg.progress ?? 0.0;
                         if (msg.index >= 0 && msg.index < lyricsModel.count) {
                             root.currentLine = lyricsModel.get(msg.index).text;
                         } else {
@@ -67,6 +70,7 @@ PluginComponent {
                         lyricsModel.clear();
                         root.currentLine = "";
                         root.currentIndex = -1;
+                        root.currentProgress = 0.0;
                         root.currentSongTitle = "";
                         root.currentSongArtist = "";
                     }
@@ -132,36 +136,13 @@ PluginComponent {
                     anchors.verticalCenter: parent.verticalCenter
                     wrapMode: Text.NoWrap
 
-                    SequentialAnimation on x {
-                        id: scrollAnim
-                        running: lyricText.implicitWidth > marqueeContainer.width
-                        loops: Animation.Infinite
+                    readonly property real maxScroll: implicitWidth - marqueeContainer.width
+                    x: maxScroll > 0 ? -root.currentProgress * maxScroll : 0
 
-                        PauseAnimation { duration: 2000 }
-
+                    Behavior on x {
                         NumberAnimation {
-                            from: 0
-                            to: -(lyricText.implicitWidth - marqueeContainer.width)
-                            duration: Math.max(1000, (lyricText.implicitWidth - marqueeContainer.width) * 30)
+                            duration: 380
                             easing.type: Easing.Linear
-                        }
-
-                        PauseAnimation { duration: 2000 }
-
-                        NumberAnimation {
-                            from: -(lyricText.implicitWidth - marqueeContainer.width)
-                            to: 0
-                            duration: Math.max(1000, (lyricText.implicitWidth - marqueeContainer.width) * 30)
-                            easing.type: Easing.Linear
-                        }
-                    }
-
-                    onTextChanged: {
-                        x = 0;
-                        if (lyricText.implicitWidth > marqueeContainer.width) {
-                            scrollAnim.restart();
-                        } else {
-                            scrollAnim.stop();
                         }
                     }
                 }
