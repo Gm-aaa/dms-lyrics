@@ -1,2 +1,5 @@
 __pycache__/
 *.pyc
+lyrics-backend.py.bak
+lyrics-backend
+lyrics_backend/target/

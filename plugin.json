@@ -23,13 +23,11 @@
             "maximum": 600
         }
     },
-    "requires": [
-        "playerctl",
-        "python"
-    ],
+    "requires": [],
     "requires_dms": ">=1.4.0",
     "permissions": [
         "settings_read",
+        "settings_write",
         "process",
         "network"
     ]
