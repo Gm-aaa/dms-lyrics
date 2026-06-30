@@ -50,6 +50,18 @@ PluginSettings {
         defaultValue: 280
     }
 
+    SelectionSetting {
+        settingKey: "gapMode"
+        label: "间奏显示方式 / Instrumental display"
+        description: "歌曲间奏/停顿时状态栏的显示方式，避免歌词整条消失闪烁。\nHow the bar behaves during instrumental gaps, to avoid flicker."
+        defaultValue: "dots"
+        options: [
+            { label: "跳动圆点 / Pulsing dots", value: "dots" },
+            { label: "保留上一句(变暗) / Keep last line", value: "linger" },
+            { label: "仅图标占位 / Icon only", value: "blank" }
+        ]
+    }
+
     StyledRect {
         width: parent.width
         height: 1
