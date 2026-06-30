@@ -118,9 +118,17 @@ fn parse_lrc(text: &str) -> Vec<(f64, String)> {
     out
 }
 
+fn http_agent() -> ureq::Agent {
+    // 必须带超时：否则某次请求挂死会让整个轮询循环永久阻塞、再也不出词。
+    ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(5))
+        .timeout(Duration::from_secs(10))
+        .build()
+}
+
 fn from_netease(title: &str, artist: &str) -> Option<String> {
     let query = format!("{} {}", title, artist).trim().to_string();
-    let agent = ureq::agent();
+    let agent = http_agent();
 
     // 1. Search song
     let search_res: serde_json::Value = agent.get("https://music.163.com/api/search/get")
@@ -161,7 +169,7 @@ fn from_netease(title: &str, artist: &str) -> Option<String> {
 }
 
 fn from_lrclib(title: &str, artist: &str, album: &str, duration: u32) -> Option<String> {
-    let agent = ureq::agent();
+    let agent = http_agent();
     let mut request = agent.get("https://lrclib.net/api/get")
         .set("User-Agent", "dms-lyrics")
         .query("track_name", title)
@@ -274,13 +282,19 @@ fn main() {
     };
     let _ = std::fs::create_dir_all(&cache_dir);
 
-    let finder = match PlayerFinder::new() {
+    let mut finder = match PlayerFinder::new() {
         Ok(f) => f,
         Err(e) => {
             eprintln!("Failed to connect to D-Bus: {:?}", e);
             std::process::exit(1);
         }
     };
+
+    // 长驻进程的 D-Bus 连接可能在运行期间卡死，导致 find_active() 再也看不到
+    // 当前活动的播放器(进程空转、状态栏不再出词)。连续多轮取不到 meta 时，
+    // 重建 PlayerFinder 拿到一个全新连接自愈——等价于"重启进程"的效果。
+    let mut none_streak: u32 = 0;
+    const RECONNECT_AFTER_NONE: u32 = 6; // ~9s of empty polls (IDLE=1500ms)
 
     let mut last_key = None;
     let mut synced: Vec<LyricLine> = Vec::new();
@@ -300,9 +314,20 @@ fn main() {
                 last_index = None;
                 last_playing = None;
             }
+            none_streak += 1;
+            if none_streak % RECONNECT_AFTER_NONE == 0 {
+                if let Ok(f) = PlayerFinder::new() {
+                    finder = f;
+                    eprintln!(
+                        "[lyrics] reconnected PlayerFinder after {} empty polls",
+                        none_streak
+                    );
+                }
+            }
             thread::sleep(Duration::from_millis(1500)); // IDLE
             continue;
         }
+        none_streak = 0;
 
         let m = meta.unwrap();
         let key = format!("{}|{}", m.artist, m.title);
