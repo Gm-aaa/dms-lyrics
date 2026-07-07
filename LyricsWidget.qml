@@ -10,7 +10,9 @@ import qs.Modules.Plugins
 PluginComponent {
     id: root
 
-    property string scriptPath: PluginService.pluginDirectory + "/lyrics/lyrics-backend"
+    // 后端二进制安装在 ~/.local/bin，按名字经 PATH 查找（见 install.sh）。
+    // 如需指定绝对路径，改这一处即可。
+    readonly property string binPath: "dms-lyrics"
     property string currentLine: ""
     property int currentIndex: -1
     property real currentProgress: 0.0
@@ -62,7 +64,7 @@ PluginComponent {
     // Backend process
     Process {
         id: proc
-        command: [root.scriptPath, "--source", root.lyricsSource]
+        command: [root.binPath, "--source", root.lyricsSource]
         running: false
         stdout: SplitParser {
             onRead: data => {

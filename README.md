@@ -23,33 +23,39 @@ A [DankMaterialShell](https://danklinux.com/) (DMS) DankBar plugin that shows
 
 ### Dependencies
 - **DankMaterialShell** `>= 1.4.0`
-- **Rust toolchain** (only needed for compilation)
-- *Note: No external runtime dependencies like `playerctl` or `python3` are required.*
+- An **MPRIS-capable player** (connected directly over D-Bus).
+- *Runtime: no `playerctl` or `python3` needed.* Building from source additionally needs a **Rust toolchain**, `pkg-config` and the **libdbus-1 dev library** (`libdbus-1-dev` / `dbus` / `dbus-devel`).
 
-### Compile & Install
-1. Clone the repository to your DMS plugins directory:
+### Install
+1. Clone the repository anywhere you like:
    ```sh
-   git clone https://github.com/Gm-aaa/dms-lyrics.git ~/.config/DankMaterialShell/plugins/lyrics
+   git clone https://github.com/Gm-aaa/dms-lyrics.git
+   cd dms-lyrics
    ```
-2. Build the Rust backend binary:
+2. Run the installer. By default it **downloads the prebuilt binary** from the latest GitHub Release (no Rust needed) and installs it:
    ```sh
-   cd ~/.config/DankMaterialShell/plugins/lyrics
-   cargo build --release --manifest-path lyrics_backend/Cargo.toml
+   ./install.sh
    ```
-3. Create the symlink to let DMS find the compiled binary:
-   ```sh
-   ln -sf lyrics_backend/target/release/lyrics_backend lyrics-backend
-   ```
-4. Restart DMS:
+   - The binary is copied to `~/.local/bin/dms-lyrics` (make sure `~/.local/bin` is on your `PATH`).
+   - The plugin (`plugin.json` + `*.qml`) is copied to `~/.config/DankMaterialShell/plugins/lyrics`.
+   - No prebuilt binary, or you prefer building yourself? Use `./install.sh --build` to compile from source (checks the toolchain first).
+   - Override locations with `DMS_LYRICS_BIN_DIR` / `DMS_LYRICS_PLUGIN_DIR`.
+3. Restart DMS:
    ```sh
    dms restart
    ```
 
 Then open DMS settings (`Mod + ,`) → **Plugins**, enable **Lyrics**, and add the widget to a DankBar section.
 
+To remove everything (binary + plugin), run `./uninstall.sh` (`--purge` also clears the runtime cache).
+
+### Release process
+Pushing a `vX.Y.Z` tag triggers a GitHub Actions workflow that builds the binary and publishes a Release with the asset `dms-lyrics-x86_64-linux`; the release notes are taken from the matching section in [`CHANGELOG.md`](CHANGELOG.md). Keep the tag in sync with the versions in `lyrics_backend/Cargo.toml` and `plugin.json`.
+
 ### Settings
 - **Lyrics source** — provider priority: Netease first / lrclib first / Netease only / lrclib only.
 - **Max width (px)** — maximum width of the lyric text before it starts scrolling horizontally.
+- **Instrumental display** — how the bar behaves during instrumental gaps: pulsing dots / keep last line (dimmed) / icon only.
 
 ---
 
@@ -67,33 +73,39 @@ Then open DMS settings (`Mod + ,`) → **Plugins**, enable **Lyrics**, and add t
 
 ### 依赖项
 - **DankMaterialShell** `>= 1.4.0`
-- **Rust 开发工具链**（仅编译时需要）
-- *注：运行时不再需要 `playerctl` 或 `python3`！*
+- 一个**支持 MPRIS 的播放器**（通过 D-Bus 直连）。
+- *运行时无需 `playerctl` 或 `python3`。* 从源码编译还需 **Rust 工具链**、`pkg-config` 与 **libdbus-1 开发库**（`libdbus-1-dev` / `dbus` / `dbus-devel`）。
 
-### 编译与安装
-1. 将本仓库克隆至您的 DMS 插件目录：
+### 安装
+1. 将本仓库克隆到任意位置：
    ```sh
-   git clone https://github.com/Gm-aaa/dms-lyrics.git ~/.config/DankMaterialShell/plugins/lyrics
+   git clone https://github.com/Gm-aaa/dms-lyrics.git
+   cd dms-lyrics
    ```
-2. 编译 Rust 后端二进制文件：
+2. 运行安装脚本。默认从最新 GitHub Release **下载预编译二进制**（无需 Rust）并安装：
    ```sh
-   cd ~/.config/DankMaterialShell/plugins/lyrics
-   cargo build --release --manifest-path lyrics_backend/Cargo.toml
+   ./install.sh
    ```
-3. 创建软链接以供 QML 加载：
-   ```sh
-   ln -sf lyrics_backend/target/release/lyrics_backend lyrics-backend
-   ```
-4. 重启 DMS：
+   - 二进制拷贝到 `~/.local/bin/dms-lyrics`（请确保 `~/.local/bin` 在 `PATH` 中）。
+   - 插件（`plugin.json` + `*.qml`）拷贝到 `~/.config/DankMaterialShell/plugins/lyrics`。
+   - 没有预编译二进制、或想自己编译？用 `./install.sh --build` 从源码编译（会先检查工具链）。
+   - 可用 `DMS_LYRICS_BIN_DIR` / `DMS_LYRICS_PLUGIN_DIR` 覆盖安装位置。
+3. 重启 DMS：
    ```sh
    dms restart
    ```
 
 随后打开 DMS 设置（`Mod + ,`）→ **Plugins**，启用 **Lyrics** 并将 widget 摆放到 DankBar 对应的位置。
 
+卸载（二进制 + 插件）：运行 `./uninstall.sh`（加 `--purge` 一并清除运行缓存）。
+
+### 发布流程
+推送形如 `vX.Y.Z` 的 tag 会触发 GitHub Actions：自动编译并发布 Release，附带产物 `dms-lyrics-x86_64-linux`，Release 说明取自 [`CHANGELOG.md`](CHANGELOG.md) 中对应版本段落。请保持该 tag 与 `lyrics_backend/Cargo.toml`、`plugin.json` 的版本一致。
+
 ### 选项设置
 - **歌词源优先级**：网易云优先 / lrclib 优先 / 仅网易云 / 仅 lrclib。
 - **组件最大宽度 (px)**：歌词文字的最大限制宽度，超出该宽度的歌词行会自动开启横向跑马灯滚动。
+- **间奏显示方式**：歌曲间奏/停顿时状态栏的表现 —— 跳动圆点 / 保留上一句(变暗) / 仅图标占位。
 
 ---
 

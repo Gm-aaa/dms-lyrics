@@ -1,5 +1,16 @@
+# Python 时代残留 / legacy Python backend
 __pycache__/
 *.pyc
 lyrics-backend.py.bak
+
+# 本地编译产物，绝不提交二进制 / local build artifacts, never commit binaries
 lyrics-backend
+dms-lyrics
 lyrics_backend/target/
+
+# 发布流程临时产物 / release workflow scratch
+dist/
+release-notes.md
+
+# 本地设计草稿，不入库 / local design notes
+docs/superpowers/
