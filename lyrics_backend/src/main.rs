@@ -86,6 +86,19 @@ fn get_meta(finder: &PlayerFinder) -> Option<TrackMeta> {
     })
 }
 
+/// 按 UTF-8 字符边界安全截断到至多 max_bytes 字节。
+/// 中文等多字节歌名若直接按字节切片(如 &s[..116])可能切在字符中间导致 panic。
+fn truncate_bytes_on_char_boundary(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 fn parse_lrc(text: &str) -> Vec<(f64, String)> {
     let mut out = Vec::new();
     for line in text.lines() {
@@ -207,7 +220,7 @@ fn fetch_synced(
     };
     let cache_filename = format!("{}-{}-{}.lrc", source_str, sanitized_artist, sanitized_title);
     let cache_filename = if cache_filename.len() > 120 {
-        format!("{}.lrc", &cache_filename[..116])
+        format!("{}.lrc", truncate_bytes_on_char_boundary(&cache_filename, 116))
     } else {
         cache_filename
     };

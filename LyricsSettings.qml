@@ -70,7 +70,7 @@ PluginSettings {
 
     StyledText {
         width: parent.width
-        text: "依赖 / Requires: playerctl, python3。仅显示有同步歌词的曲目；视频/纯音乐会自动隐藏。\nNeeds playerctl & python3. Only songs with synced lyrics are shown; videos/instrumentals are hidden."
+        text: "依赖 / Requires: 一个支持 MPRIS 的播放器（通过 D-Bus 直连，无需 playerctl 或 python3）。仅显示有同步歌词的曲目；视频/纯音乐会自动隐藏。\nNeeds an MPRIS-capable player (connected directly over D-Bus; no playerctl or python3). Only songs with synced lyrics are shown; videos/instrumentals are hidden."
         font.pixelSize: Theme.fontSizeSmall
         color: Theme.surfaceVariantText
         wrapMode: Text.WordWrap

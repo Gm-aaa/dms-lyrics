@@ -21,6 +21,10 @@
             "default": 280,
             "minimum": 80,
             "maximum": 600
+        },
+        "gapMode": {
+            "type": "string",
+            "default": "dots"
         }
     },
     "requires": [],
