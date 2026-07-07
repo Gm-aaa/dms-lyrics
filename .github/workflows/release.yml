@@ -15,9 +15,6 @@ jobs:
     name: 构建并发布 (x86_64-linux)
     # 用较旧的 ubuntu 以获得更宽松的 glibc 兼容性（新系统能向下兼容）。
     runs-on: ubuntu-22.04
-    env:
-      # 固定产物路径为 target/release，避免仓库内自定义 target-dir 干扰。
-      CARGO_TARGET_DIR: target
     steps:
       - uses: actions/checkout@v4
 
