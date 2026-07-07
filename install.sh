@@ -89,13 +89,9 @@ build_binary() {
 
 download_binary() {
     need curl
-    msg "查询 $REPO 最新 Release / Querying latest release..."
-    local url
-    url="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
-        | grep -o "https://[^\"]*/$ASSET")" || true
-    url="$(printf '%s\n' "$url" | head -1)"
-    [ -n "$url" ] || { warn "最新 Release 中未找到资产 $ASSET"; return 1; }
-    msg "下载 / Downloading $url ..."
+    # 用 GitHub 稳定的 latest 资产跳转地址，绕开限流严重的未认证 API 与 JSON 解析。
+    local url="https://github.com/$REPO/releases/latest/download/$ASSET"
+    msg "下载最新 Release / Downloading $url ..."
     TMP_BIN="$(mktemp)"
     curl -fSL --progress-bar "$url" -o "$TMP_BIN" || return 1
     SRC_BIN="$TMP_BIN"
