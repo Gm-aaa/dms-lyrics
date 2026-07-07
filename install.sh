@@ -46,19 +46,13 @@ done
     || die "请在克隆的仓库根目录运行本脚本（缺少 plugin.json）"
 
 # --- 桌面系统环境兼容性检查 ---
+# 硬性前置：仅支持 Linux（后端是 Linux D-Bus 程序，其它系统编译也无意义）。
+# 架构不作硬性拦截：预编译二进制仅 x86_64，其它架构在取二进制时自动回退到源码编译。
 check_compat() {
-    local os arch
+    local os
     os="$(uname -s)"
-    arch="$(uname -m)"
     [ "$os" = "Linux" ] || die "仅支持 Linux（当前：$os）。"
-    if [ "$BUILD_FROM_SOURCE" -eq 0 ]; then
-        # 下载路径：预编译二进制仅提供 x86_64
-        case "$arch" in
-            x86_64|amd64) ;;
-            *) die "预编译二进制仅提供 x86_64（当前架构：$arch）。请改用源码编译：./install.sh --build" ;;
-        esac
-    fi
-    msg "环境检查通过 / Environment OK: $os $arch"
+    msg "环境检查通过 / Environment OK: $os $(uname -m)"
 }
 
 SRC_BIN=""
@@ -88,23 +82,45 @@ build_binary() {
 }
 
 download_binary() {
-    need curl
     # 用 GitHub 稳定的 latest 资产跳转地址，绕开限流严重的未认证 API 与 JSON 解析。
     local url="https://github.com/$REPO/releases/latest/download/$ASSET"
     msg "下载最新 Release / Downloading $url ..."
     TMP_BIN="$(mktemp)"
     curl -fSL --progress-bar "$url" -o "$TMP_BIN" || return 1
+    [ -s "$TMP_BIN" ] || { warn "下载得到空文件 / empty download"; return 1; }
     SRC_BIN="$TMP_BIN"
 }
 
 check_compat
 
-if [ "$BUILD_FROM_SOURCE" -eq 1 ]; then
+# 获取二进制：--build 直接源码编译；否则优先下载，遇到以下任一情况自动回退到源码编译：
+#   非 x86_64 架构（无预编译二进制）/ 缺少 curl / 下载失败或得到空文件。
+# 回退编译时 check_toolchain 若发现工具链缺失，会给出明确的安装提示后退出。
+install_binary() {
+    if [ "$BUILD_FROM_SOURCE" -eq 1 ]; then
+        build_binary
+        return
+    fi
+    local arch
+    arch="$(uname -m)"
+    case "$arch" in
+        x86_64|amd64)
+            if command -v curl >/dev/null 2>&1; then
+                if download_binary; then
+                    return
+                fi
+                warn "下载失败，自动回退到本地源码编译…/ download failed, falling back to build…"
+            else
+                warn "未找到 curl，无法下载预编译二进制，自动回退到本地源码编译…"
+            fi
+            ;;
+        *)
+            warn "本机架构 $arch 无预编译二进制，改为本地源码编译…/ no prebuilt binary for $arch, building…"
+            ;;
+    esac
     build_binary
-else
-    download_binary \
-        || die "从 Release 下载失败。可改用源码编译：./install.sh --build（需 Rust + pkg-config + libdbus-1 开发库）"
-fi
+}
+install_binary
 
 # 安装二进制（拷贝到 PATH 目录，非软链接）
 msg "安装二进制 / Installing binary → $BIN_DIR/$BIN_NAME"
