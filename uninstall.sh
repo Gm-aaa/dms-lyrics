@@ -2,22 +2,19 @@
 #
 # DMS Lyrics 卸载脚本 / uninstaller
 #
-# 移除已安装的二进制与插件，并尽力停掉仍在运行的后端进程。
-# 默认保留运行缓存；加 --purge 一并删除。
+# 移除已安装的纯 QML 插件目录。
+# 默认顺带清理旧 Rust 版残留的运行缓存；加 --purge 强制清理(即使已不存在也无妨)。
 #
 # 位置（与 install.sh 相同，可用环境变量覆盖）：
-#   二进制 → $DMS_LYRICS_BIN_DIR      (默认 ~/.local/bin)
-#   插件   → $DMS_LYRICS_PLUGIN_DIR   (默认 ~/.config/DankMaterialShell/plugins/lyrics)
+#   插件 → $DMS_LYRICS_PLUGIN_DIR   (默认 ~/.config/DankMaterialShell/plugins/lyrics)
 #
 # 用法：
-#   ./uninstall.sh            # 移除二进制 + 插件
-#   ./uninstall.sh --purge    # 另外删除运行缓存 ($XDG_RUNTIME_DIR/dms-lyrics)
+#   ./uninstall.sh            # 移除插件
+#   ./uninstall.sh --purge    # 另外删除旧版运行缓存 ($XDG_RUNTIME_DIR/dms-lyrics)
 #
 set -euo pipefail
 
-BIN_DIR="${DMS_LYRICS_BIN_DIR:-$HOME/.local/bin}"
 PLUGIN_DIR="${DMS_LYRICS_PLUGIN_DIR:-$HOME/.config/DankMaterialShell/plugins/lyrics}"
-BIN_NAME="dms-lyrics"
 
 msg()  { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m警告:\033[0m %s\n' "$*" >&2; }
@@ -34,19 +31,6 @@ for arg in "$@"; do
     esac
 done
 
-# 尽力停掉仍在运行的后端（插件被禁用时 DMS 也会终止它；这里作双保险）。
-# 用 -x 精确匹配进程名，避免误杀本脚本或其它含 dms-lyrics 的命令行。
-if pkill -x "$BIN_NAME" 2>/dev/null; then
-    msg "已停止运行中的后端 / Stopped running backend"
-fi
-
-if [ -e "$BIN_DIR/$BIN_NAME" ]; then
-    msg "移除二进制 / Removing binary $BIN_DIR/$BIN_NAME"
-    rm -f "$BIN_DIR/$BIN_NAME"
-else
-    warn "未发现二进制 $BIN_DIR/$BIN_NAME（可能已删除或安装到别处）"
-fi
-
 # 插件目录：符号链接（开发软链）保持不动、跳过删除；真实目录才移除。
 if [ -L "$PLUGIN_DIR" ]; then
     warn "插件目录是符号链接（开发软链），保留不动、跳过删除：$PLUGIN_DIR"
@@ -57,14 +41,15 @@ else
     warn "未发现插件目录 $PLUGIN_DIR"
 fi
 
-if [ "$PURGE" -eq 1 ]; then
-    CACHE_DIR="${XDG_RUNTIME_DIR:-/tmp}/dms-lyrics"
+# 旧 Rust 版把 .lrc 缓存写在 $XDG_RUNTIME_DIR/dms-lyrics;纯 QML 版已不再落盘,
+# 这里顺手清掉可能的历史残留(--purge 时无论存在与否都尝试)。
+CACHE_DIR="${XDG_RUNTIME_DIR:-/tmp}/dms-lyrics"
+if [ "$PURGE" -eq 1 ] || [ -e "$CACHE_DIR" ]; then
     if [ -e "$CACHE_DIR" ]; then
-        msg "清除运行缓存（--purge）/ Purging cache $CACHE_DIR"
+        msg "清除旧版运行缓存 / Purging legacy cache $CACHE_DIR"
         rm -rf "$CACHE_DIR"
     fi
 fi
 
 msg "卸载完成 / Done."
 echo "记得在 DankMaterialShell 中停用/移除 Lyrics 插件。"
-echo "提示：源码编译产物仍在 lyrics_backend/target，可用 'cargo clean' 一并清除。"

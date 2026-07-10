@@ -3,16 +3,25 @@
 本项目所有值得注意的改动都记录在此文件。
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循
-[语义化版本](https://semver.org/lang/zh-CN/)。发布 tag 形如 `vX.Y.Z`，与 `lyrics_backend/Cargo.toml`
-和 `plugin.json` 的版本保持一致；推送该 tag 会由 GitHub Actions 自动构建并发布 Release，
-Release 说明取自本文件对应版本段落。
+[语义化版本](https://semver.org/lang/zh-CN/)，与 `plugin.json` 的版本保持一致。
 
-## [Unreleased]
+## [0.3.0] - 2026-07-10
 
-### 修复
-- `install.sh` 兜底逻辑改为真正的自动回退：默认下载失败、缺少 `curl`、或非 x86_64 架构
-  （无预编译二进制）时，自动回退到本地源码编译，而非仅报错提示手动 `--build`；缺 `curl`
-  不再在下载前硬退出。下载产物新增非空校验，避免安装到空/残缺文件。
+### 变更
+- **架构重构：Rust 后端彻底移除，改为纯 QML 插件。** 播放状态改为通过 DMS 内置的
+  `MprisController`（D-Bus 上的 MPRIS）读取；歌词抓取改为在 QML 内用异步
+  `XMLHttpRequest` 完成。不再有独立二进制、子进程、`Process`/`SplitParser` 往返，
+  也不再需要 PATH 配置或 D-Bus 连接自愈逻辑（连接由 Quickshell 管理）。
+- 歌词抓取与 LRC 解析拆分到独立的纯逻辑文件 `LyricsFetcher.js`，与 UI 解耦。
+- 缓存由「tmpfs 磁盘文件」改为「内存 `Map`」：shell 生命周期内有效，**零磁盘写入**；
+  快速切歌时用 generation token 作废过期请求的回调，避免旧歌词覆盖新歌词。
+- `install.sh` / `uninstall.sh` 大幅简化为纯拷贝：只把 `plugin.json` + `*.qml` + `*.js`
+  安装到插件目录，删除了下载预编译二进制、源码编译、PATH 检查、进程清理等逻辑。
+- `plugin.json` 移除 `process` 权限（不再创建子进程），版本 0.2.0 → 0.3.0。
+
+### 移除
+- 整套 Rust 后端 `lyrics_backend/`（`mpris` + `ureq` 直连 D-Bus / HTTP）及预编译二进制。
+- GitHub Actions 发布流程 `.github/workflows/release.yml`（不再需要构建/发布二进制）。
 
 ## [0.2.0] - 2026-07-07
 

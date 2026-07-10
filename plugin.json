@@ -2,7 +2,7 @@
     "id": "lyrics",
     "name": "Lyrics",
     "description": "Show synced lyrics of the currently playing song (Netease + lrclib) in DankBar",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "author": "gmaaa",
     "icon": "lyrics",
     "type": "widget",
@@ -32,7 +32,6 @@
     "permissions": [
         "settings_read",
         "settings_write",
-        "process",
         "network"
     ]
 }

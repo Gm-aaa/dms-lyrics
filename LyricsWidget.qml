@@ -1,23 +1,23 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
-import Quickshell.Io
 import qs.Common
 import qs.Services
 import qs.Widgets
 import qs.Modules.Plugins
+import "LyricsFetcher.js" as Fetcher
 
 PluginComponent {
     id: root
 
-    // 后端二进制安装在 ~/.local/bin，按名字经 PATH 查找（见 install.sh）。
-    // 如需指定绝对路径，改这一处即可。
-    readonly property string binPath: "dms-lyrics"
     property string currentLine: ""
     property int currentIndex: -1
     property real currentProgress: 0.0
     property string currentSongTitle: ""
     property string currentSongArtist: ""
+
+    // 当前正在追踪的曲目键 "artist|title",用于检测换歌
+    property string currentSongKey: ""
 
     // settings, read reactively to solve reactivity bug
     readonly property string settingsJson: JSON.stringify(SettingsData.pluginSettings[pluginId] ?? {})
@@ -49,11 +49,17 @@ PluginComponent {
     _visibilityOverride: true
     _visibilityOverrideValue: lyricsModel.count > 0
 
+    // 当前活动播放器：由 DMS 的 MprisController 统一管理(播放器选择、切换、
+    // D-Bus 连接与自愈都由它负责,这里只需读取)。
+    readonly property var player: MprisController.activePlayer
+    readonly property bool hasPlayer: player !== null
+    readonly property bool playing: hasPlayer && player.isPlaying
+
     ListModel {
         id: lyricsModel
     }
 
-    // Animation to drive currentProgress smoothly locally to eliminate D-Bus position stuttering
+    // 本地平滑驱动 currentProgress,消除 D-Bus position 抖动
     NumberAnimation {
         id: progressAnim
         target: root
@@ -61,104 +67,152 @@ PluginComponent {
         easing.type: Easing.Linear
     }
 
-    // Backend process
-    Process {
-        id: proc
-        command: [root.binPath, "--source", root.lyricsSource]
-        running: false
-        stdout: SplitParser {
-            onRead: data => {
-                var line = data.trim();
-                if (line === "") return;
-                try {
-                    var msg = JSON.parse(line);
-                    if (msg.type === "song") {
-                        lyricsModel.clear();
-                        for (var i = 0; i < msg.lyrics.length; i++) {
-                            lyricsModel.append({
-                                time: msg.lyrics[i].time,
-                                text: msg.lyrics[i].text
-                            });
-                        }
-                        root.currentSongTitle = msg.title;
-                        root.currentSongArtist = msg.artist;
-                        root.currentIndex = -1;
-                        root.currentProgress = 0.0;
-                        progressAnim.running = false;
-                    } else if (msg.type === "sync") {
-                        var changed = (root.currentIndex !== msg.index);
-                        if (changed) {
-                            root.currentIndex = msg.index;
-                            if (msg.index >= 0 && msg.index < lyricsModel.count) {
-                                root.currentLine = lyricsModel.get(msg.index).text;
-                            } else {
-                                root.currentLine = "";
-                            }
-                        }
+    // ---- 歌词加载与同步 ----
 
-                        // Calculate progress at the queried position
-                        var progress = 0.0;
-                        if (msg.index >= 0 && msg.index < lyricsModel.count) {
-                            var lineStartTime = lyricsModel.get(msg.index).time;
-                            if (msg.duration > 0) {
-                                progress = Math.max(0.0, Math.min(1.0, (msg.position - lineStartTime) / msg.duration));
-                            }
-                        }
+    function clearAll() {
+        currentSongKey = "";
+        lyricsModel.clear();
+        currentLine = "";
+        currentIndex = -1;
+        currentProgress = 0.0;
+        currentSongTitle = "";
+        currentSongArtist = "";
+        progressAnim.running = false;
+    }
 
-                        // Sync progress animation
-                        progressAnim.running = false;
-                        root.currentProgress = progress;
-                        
-                        if (msg.playing && msg.index >= 0 && progress < 1.0) {
-                            progressAnim.from = progress;
-                            progressAnim.to = 1.0;
-                            progressAnim.duration = (msg.duration * (1.0 - progress)) * 1000;
-                            progressAnim.running = true;
-                        }
-                    } else if (msg.type === "clear") {
-                        lyricsModel.clear();
-                        root.currentLine = "";
-                        root.currentIndex = -1;
-                        root.currentProgress = 0.0;
-                        root.currentSongTitle = "";
-                        root.currentSongArtist = "";
-                        progressAnim.running = false;
-                    }
-                } catch (e) {
-                    console.log("[Lyrics Backend Error] " + e + " for line: " + line);
-                }
-            }
+    // 检测换歌;若为新曲则异步拉取歌词
+    function songChanged() {
+        if (!hasPlayer) {
+            clearAll();
+            return;
+        }
+        var title = player.trackTitle || "";
+        var artist = player.trackArtist || "";
+        if (title === "")
+            return;
+
+        var key = artist + "|" + title;
+        if (key === currentSongKey)
+            return;
+        currentSongKey = key;
+
+        // 立即复位显示,避免残留上一首的歌词
+        lyricsModel.clear();
+        currentLine = "";
+        currentIndex = -1;
+        currentProgress = 0.0;
+        progressAnim.running = false;
+        currentSongTitle = title;
+        currentSongArtist = artist;
+
+        var album = player.trackAlbum || "";
+        var duration = (player.lengthSupported && player.length > 0) ? Math.round(player.length) : 0;
+
+        Fetcher.fetchLyrics(lyricsSource, title, artist, album, duration, function (lyrics) {
+            // 异步回调:确认仍是同一首(可能已切歌或已切歌词源)
+            if (key !== currentSongKey)
+                return;
+            lyricsModel.clear();
+            for (var i = 0; i < lyrics.length; i++)
+                lyricsModel.append({ time: lyrics[i].time, text: lyrics[i].text });
+            currentIndex = -1;
+            currentProgress = 0.0;
+            progressAnim.running = false;
+            if (lyricsModel.count > 0)
+                updateSync(); // 立即定位到当前行
+        });
+    }
+
+    // 按当前播放位置返回应高亮的歌词行下标(-1 表示前奏/间奏)
+    function currentIndexAt(pos) {
+        var idx = -1;
+        for (var i = 0; i < lyricsModel.count; i++) {
+            if (lyricsModel.get(i).time <= pos + 0.2)
+                idx = i;
+            else
+                break;
+        }
+        return idx;
+    }
+
+    // 依据播放位置刷新当前行与进度动画
+    function updateSync() {
+        if (lyricsModel.count === 0 || !hasPlayer)
+            return;
+
+        var pos = player.position || 0;
+        var i = currentIndexAt(pos);
+        if (i !== currentIndex) {
+            currentIndex = i;
+            currentLine = (i >= 0 && i < lyricsModel.count) ? lyricsModel.get(i).text : "";
+        }
+
+        var progress = 0.0;
+        var lineDuration = 5.0;
+        if (i >= 0 && i < lyricsModel.count) {
+            var curT = lyricsModel.get(i).time;
+            var nextT;
+            if (i + 1 < lyricsModel.count)
+                nextT = lyricsModel.get(i + 1).time;
+            else if (player.lengthSupported && player.length > 0)
+                nextT = player.length;
+            else
+                nextT = curT + 8.0;
+            lineDuration = nextT - curT;
+            if (lineDuration > 0)
+                progress = Math.max(0.0, Math.min(1.0, (pos - curT) / lineDuration));
+        }
+
+        progressAnim.running = false;
+        currentProgress = progress;
+        if (playing && i >= 0 && progress < 1.0) {
+            progressAnim.from = progress;
+            progressAnim.to = 1.0;
+            progressAnim.duration = (lineDuration * (1.0 - progress)) * 1000;
+            progressAnim.running = true;
         }
     }
 
-    Component.onCompleted: proc.running = true
-
-    onLyricsSourceChanged: restart()
-    Connections {
-        target: root.pluginService
-        enabled: root.pluginService !== null
-        function onPluginDataChanged(changedId) {
-            if (changedId === root.pluginId)
-                root.restart()
-        }
-    }
-    function restart() {
-        proc.running = false
-        restartTimer.restart()
-    }
+    // 播放中定时刷新 D-Bus 位置并同步歌词(取代 Rust 后端的 FAST 轮询)
     Timer {
-        id: restartTimer
+        id: posTimer
         interval: 250
-        onTriggered: proc.running = true
+        repeat: true
+        running: root.playing && lyricsModel.count > 0
+        onTriggered: {
+            if (root.hasPlayer)
+                root.player.positionChanged(); // 强制刷新 position
+            root.updateSync();
+        }
     }
 
-    // Auto-restart if process unexpectedly dies
-    Timer {
-        interval: 3000
-        running: true
-        repeat: true
-        onTriggered: if (!proc.running) proc.running = true
+    // 换歌检测:监听当前播放器的标题/艺术家变化
+    Connections {
+        target: root.player
+        ignoreUnknownSignals: true
+        function onTrackTitleChanged() { root.songChanged(); }
+        function onTrackArtistChanged() { root.songChanged(); }
     }
+
+    // 活动播放器本身切换(或消失)
+    onPlayerChanged: {
+        if (hasPlayer)
+            songChanged();
+        else
+            clearAll();
+    }
+
+    // 暂停/播放切换时立即重算一次(与 Rust 的 status_changed 一致)
+    onPlayingChanged: updateSync()
+
+    // 切换歌词源:清缓存并对当前曲目重新抓取
+    onLyricsSourceChanged: {
+        Fetcher.clearCache();
+        currentSongKey = "";
+        songChanged();
+    }
+
+    Component.onCompleted: if (hasPlayer) songChanged()
 
     horizontalBarPill: Component {
         Row {
