@@ -141,6 +141,13 @@ PluginComponent {
             return;
 
         var pos = player.position || 0;
+        // 单曲循环修复:Quickshell 的 position 是客户端插值,基线仅在 seek/换轨/播放暂停时
+        // 刷新;循环重播同一轨(不发 Seeked)时它会越过曲长且永不归零,导致行号卡在最后一行、
+        // 歌词不再推进。越过曲长即按曲长取模,还原当前循环内的真实位置(N×曲长+pos → pos)。
+        // 正常播放(pos ≤ 曲长)时为 no-op,零副作用。
+        var len = (player.lengthSupported && player.length > 0) ? player.length : 0;
+        if (len > 0 && pos >= len)
+            pos = pos % len;
         var i = currentIndexAt(pos);
         if (i !== currentIndex) {
             currentIndex = i;
@@ -192,6 +199,9 @@ PluginComponent {
         ignoreUnknownSignals: true
         function onTrackTitleChanged() { root.songChanged(); }
         function onTrackArtistChanged() { root.songChanged(); }
+        // 进度跳转(seek):Quickshell 在 seek 时会自主 emit positionChanged(播放/暂停均如此),
+        // 立即重算当前行,不必等 250ms 轮询;尤其修复"暂停时拖动进度 posTimer 不跑、歌词不跟"。
+        function onPositionChanged() { root.updateSync(); }
     }
 
     // 活动播放器本身切换(或消失)

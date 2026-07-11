@@ -5,6 +5,16 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循
 [语义化版本](https://semver.org/lang/zh-CN/)，与 `plugin.json` 的版本保持一致。
 
+## [Unreleased]
+
+### 修复
+- 单曲循环时歌词卡在最后一行、不再推进:Quickshell 的 `position` 为客户端插值,循环重播
+  同一轨(不发 `Seeked`)时会越过曲长且永不归零;`updateSync` 现在在位置越过曲长时按曲长
+  取模还原当前循环内的真实位置(与 DMS 媒体面板 `position % length` 同款思路)。
+- 拖动播放进度时歌词不跟随(尤其**暂停时拖动**):此前只在 `posTimer`(250ms、仅播放时
+  运行)读取位置,暂停拖动时无人触发同步。新增 `onPositionChanged` 响应式处理,seek 时
+  (播放 / 暂停)立即重算当前行。
+
 ## [0.3.0] - 2026-07-10
 
 ### 变更
