@@ -8,6 +8,11 @@
 ## [Unreleased]
 
 ### 修复
+- 播放停止后歌词残留在状态栏不消失:DMS 的 `MprisController` 仅在「Stopped 且元数据
+  已清空」时才移除 `activePlayer`,播放器停止后保留曲目信息(很多播放器如此)时
+  `player` 引用与标题都不变化,widget 收不到任何信号。新增 `stopped` 状态
+  (`playbackState === Stopped`)监听:停止时清空并隐藏,从停止恢复播放时自动重新
+  抓词;暂停仍保留歌词不受影响。
 - 单曲循环时歌词卡在最后一行、不再推进:Quickshell 的 `position` 为客户端插值,循环重播
   同一轨(不发 `Seeked`)时会越过曲长且永不归零;`updateSync` 现在在位置越过曲长时按曲长
   取模还原当前循环内的真实位置(与 DMS 媒体面板 `position % length` 同款思路)。

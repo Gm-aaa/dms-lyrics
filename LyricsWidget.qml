@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Services.Mpris
 import qs.Common
 import qs.Services
 import qs.Widgets
@@ -54,6 +55,10 @@ PluginComponent {
     readonly property var player: MprisController.activePlayer
     readonly property bool hasPlayer: player !== null
     readonly property bool playing: hasPlayer && player.isPlaying
+    // 播放器"停止"(区别于暂停):MprisController 仅在元数据同时清空时才会移除
+    // activePlayer,保留元数据的播放器停止后 player 不变、任何信号都不会触发,
+    // 必须显式监听 Stopped 状态,否则歌词永远残留(本插件曾有此 Bug)。
+    readonly property bool stopped: hasPlayer && player.playbackState === MprisPlaybackState.Stopped
 
     ListModel {
         id: lyricsModel
@@ -73,6 +78,7 @@ PluginComponent {
         currentSongKey = "";
         lyricsModel.clear();
         currentLine = "";
+        lastNonEmpty = "";
         currentIndex = -1;
         currentProgress = 0.0;
         currentSongTitle = "";
@@ -82,7 +88,7 @@ PluginComponent {
 
     // 检测换歌;若为新曲则异步拉取歌词
     function songChanged() {
-        if (!hasPlayer) {
+        if (!hasPlayer || stopped) {
             clearAll();
             return;
         }
@@ -214,6 +220,10 @@ PluginComponent {
 
     // 暂停/播放切换时立即重算一次(与 Rust 的 status_changed 一致)
     onPlayingChanged: updateSync()
+
+    // 停止→清空;从停止恢复→重新加载(clearAll 已清 currentSongKey,会重新抓词)。
+    // 暂停不清空:歌词保留在当前行。
+    onStoppedChanged: songChanged()
 
     // 切换歌词源:清缓存并对当前曲目重新抓取
     onLyricsSourceChanged: {
